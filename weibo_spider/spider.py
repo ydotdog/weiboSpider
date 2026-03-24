@@ -385,6 +385,11 @@ def main(_):
     try:
         config = _get_config()
         config_util.validate_config(config)
+        # 初始化代理
+        proxy = config.get('proxy')
+        if proxy:
+            from .parser.util import set_proxies
+            set_proxies(proxy)
         wb = Spider(config)
         wb.start()  # 爬取微博信息
     except Exception as e:

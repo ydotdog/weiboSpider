@@ -91,6 +91,7 @@ class PageParser(Parser):
             return weibos, weibo_id_list, self.to_continue
         except Exception as e:
             logger.exception(e)
+            return [], weibo_id_list, self.to_continue
 
     def is_original(self, info):
         """判断微博是否为原创微博"""

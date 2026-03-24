@@ -12,37 +12,62 @@ TEST_DATA_DIR = 'tests/testdata'
 URL_MAP_FILE = 'url_map.json'
 logger = logging.getLogger('spider.util')
 
+# 全局代理配置，由 spider.py 初始化
+_proxies = None
+
+
+def set_proxies(proxy_url):
+    """设置全局代理"""
+    global _proxies
+    if proxy_url:
+        _proxies = {'http': proxy_url, 'https': proxy_url}
+        logger.info(u'已启用代理: %s', proxy_url)
+
+
+def get_proxies():
+    return _proxies
+
 
 def hash_url(url):
     return hashlib.sha224(url.encode('utf8')).hexdigest()
 
 
+DEFAULT_UA = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+              'AppleWebKit/537.36 (KHTML, like Gecko) '
+              'Chrome/133.0.0.0 Safari/537.36')
+
+
 def handle_html(cookie, url):
     """处理html"""
-    try:
-        user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.111 Safari/537.36'
-        headers = {'User_Agent': user_agent, 'Cookie': cookie}
-        resp = requests.get(url, headers=headers)
-
-        if GENERATE_TEST_DATA:
-            import io
-            import os
-
-            resp_file = os.path.join(TEST_DATA_DIR, '%s.html' % hash_url(url))
-            with io.open(resp_file, 'w', encoding='utf-8') as f:
-                f.write(resp.text)
-
-            with io.open(os.path.join(TEST_DATA_DIR, URL_MAP_FILE), 'r+') as f:
-                url_map = json.loads(f.read())
-                url_map[url] = resp_file
-                f.seek(0)
-                f.write(json.dumps(url_map, indent=4, ensure_ascii=False))
-                f.truncate()
-
-        selector = etree.HTML(resp.content)
-        return selector
-    except Exception as e:
-        logger.exception(e)
+    from time import sleep
+    headers = {'User-Agent': DEFAULT_UA, 'Cookie': cookie}
+    for attempt in range(5):
+        try:
+            resp = requests.get(url, headers=headers, timeout=10,
+                                proxies=_proxies)
+            if resp.status_code == 200 and len(resp.content) > 0:
+                selector = etree.HTML(resp.content)
+                return selector
+            elif resp.status_code == 403:
+                wait = 300 * (attempt + 1)
+                logger.warning(u'403 IP被限制，等待%d秒后重试(第%d次)',
+                               wait, attempt + 1)
+                sleep(wait)
+            elif resp.status_code == 432:
+                logger.error(u'432 User-Agent被拒绝，请更新UA')
+                return None
+            else:
+                wait = 60 * (attempt + 1)
+                logger.warning(u'请求返回状态码%d，等待%d秒后重试(第%d次)',
+                               resp.status_code, wait, attempt + 1)
+                sleep(wait)
+        except Exception as e:
+            wait = 60 * (attempt + 1)
+            logger.warning(u'请求异常，等待%d秒后重试(第%d次): %s',
+                           wait, attempt + 1, str(e))
+            sleep(wait)
+    logger.error(u'请求%s失败，已重试5次', url)
+    return None
 
 
 def handle_garbled(info):
@@ -95,9 +120,9 @@ def to_video_download_url(cookie, video_page_url):
     video_object_url = video_page_url.replace('m.weibo.cn/s/video/show',
                                               'm.weibo.cn/s/video/object')
     try:
-        user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.111 Safari/537.36'
-        headers = {'User_Agent': user_agent, 'Cookie': cookie}
-        wb_info = requests.get(video_object_url, headers=headers).json()
+        headers = {'User-Agent': DEFAULT_UA, 'Cookie': cookie}
+        wb_info = requests.get(video_object_url, headers=headers,
+                               proxies=_proxies).json()
         video_url = wb_info['data']['object']['stream'].get('hd_url')
         if not video_url:
             video_url = wb_info['data']['object']['stream']['url']

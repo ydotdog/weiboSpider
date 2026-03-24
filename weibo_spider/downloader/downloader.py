@@ -36,9 +36,11 @@ class Downloader(ABC):
                 s = requests.Session()
                 s.mount(url,
                         HTTPAdapter(max_retries=self.file_download_timeout[0]))
+                from ..parser.util import get_proxies
                 downloaded = s.get(url,
                                    timeout=(self.file_download_timeout[1],
-                                            self.file_download_timeout[2]))
+                                            self.file_download_timeout[2]),
+                                   proxies=get_proxies())
                 with open(file_path, 'wb') as f:
                     f.write(downloaded.content)
         except Exception as e:
